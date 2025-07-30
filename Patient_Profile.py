@@ -1,7 +1,7 @@
 from fastapi import FastAPI, Path, Query, HTTPException
 import json
 from pydantic import BaseModel, Field, computed_field
-from typing import Annotated, Literal
+from typing import Annotated, Literal, Optional
 from fastapi.responses import JSONResponse
 
 app = FastAPI()
@@ -32,6 +32,16 @@ class Patient(BaseModel):
             return "Overweight"
         else:
             return "Obese"
+
+#New pydantic model for update
+class PatientUpdate(BaseModel):
+    name: Annotated[Optional[str], Field(default=None)]
+    city: Annotated[Optional[str], Field(default=None)]
+    age: Annotated[Optional[int], Field(default=None, gt=0)]
+    gender: Annotated[Optional[Literal['male', 'female', 'others']], Field(default=None)]
+    height: Annotated[Optional[float], Field(default=None, gt=0)]
+    weight: Annotated[Optional[float], Field(default=None, gt=0)]
+
 
 def load_data():
     with open("patients.json", "r") as f:
@@ -101,6 +111,43 @@ def create_patient(patient: Patient):
         save_data(data)
 
         return JSONResponse(status_code=201, content="Patient created Successfully!")
+
+@app.put("/edit/{patient_id}")
+def update_patient(patient_id: str, patient_update: PatientUpdate): #patient_update -> request_body
+    data = load_data()
+    if patient_id not in data.keys():
+        raise HTTPException(status_code=404, detail="Patient not Found!")
+
+    existing_pat_info = data[patient_id]
+
+    #convert upcoming obj to dict
+    #exclude_unset=True will provide only those values for which user set the value/user sent the value
+    updated_pat_info = patient_update.model_dump(exclude_unset=True)
+
+    #extract the values for the provided attributes
+    for key, value in updated_pat_info.items():
+        existing_pat_info[key] = value
+
+    #To get the bmi and other computed fields values automatically,
+    #existing_pat_info -> pydantic_obj -> bmi+verdict
+    #We will create an object of the Patient pydantic model
+    existing_pat_info['id'] = patient_id
+    patient_pydantic_object = Patient(**existing_pat_info)
+
+    #pydantic_obj -> dict
+    existing_pat_info = patient_pydantic_object.model_dump(exclude='id')
+
+    #restore the updated patient to data dict
+    data[patient_id] = existing_pat_info
+
+    #save data
+    save_data(data)
+
+    return JSONResponse(status_code=200, content="Patient updated successfully!")
+
+
+
+
 
 
 
